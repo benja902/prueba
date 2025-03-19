@@ -21,7 +21,7 @@ def descargar_audio(url, output_folder=UPLOAD_FOLDER):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'cookiefile': '/app/cookies.txt',  # Agregar cookies
+            "cookies-from-browser": "chrome"  # Agregar cookies
 
         }
         
