@@ -1,38 +1,47 @@
-# app.py (Aplicación principal)
 import os
+import re
 import yt_dlp
-from flask import Flask, render_template, request, send_file, redirect, url_for
-import time
+from flask import Flask, render_template, request, send_file
 
 app = Flask(__name__)
-
-# Ruta para almacenar las descargas
-UPLOAD_FOLDER = 'descargas'
+UPLOAD_FOLDER = "descargas"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def descargar_audio(url, output_folder=UPLOAD_FOLDER):
+def limpiar_nombre(nombre):
+    """Elimina caracteres especiales y normaliza el nombre del archivo."""
+    nombre = re.sub(r'[^\w\s-]', '', nombre)  # Elimina caracteres especiales
+    nombre = re.sub(r'\s+', '_', nombre)  # Reemplaza espacios por "_"
+    return nombre.strip("_")  # Elimina "_" adicionales
+
+def descargar_audio(url):
+    """Descarga el audio y renombra correctamente. Sobrescribe si ya existe."""
     try:
-        # Configuración de yt-dlp para descargar solo el audio
+        output_template = os.path.join(UPLOAD_FOLDER, "%(title)s.%(ext)s")
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': f'{output_folder}/%(title)s.%(ext)s',
+            'outtmpl': output_template,
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            "cookies-from-browser": "chrome"  # Agregar cookies
-
+            'cookiefile': 'cookie.txt',
         }
-        
-        # Descargar audio
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
+            downloaded_path = info_dict['requested_downloads'][0]['filepath']  # Nombre real del archivo descargado
+
+            # Generar un nombre limpio
             video_title = info_dict.get('title', 'audio')
-            # Sanitizar el título para el nombre del archivo
-            video_title = "".join(c for c in video_title if c.isalnum() or c in ' -_').strip()
-            file_path = os.path.join(output_folder, f"{video_title}.mp3")
-            return file_path, video_title
+            video_title = limpiar_nombre(video_title)
+            new_file_path = os.path.join(UPLOAD_FOLDER, f"{video_title}.mp3")
+
+            # Si el archivo existe, lo sobrescribe
+            os.replace(downloaded_path, new_file_path)
+
+            return new_file_path, video_title
+
     except Exception as e:
         return None, str(e)
 
@@ -40,25 +49,27 @@ def descargar_audio(url, output_folder=UPLOAD_FOLDER):
 def index():
     mensaje = None
     archivo = None
-    nombre_archivo = None
     
     if request.method == 'POST':
         url = request.form.get('url')
         if url:
             file_path, result = descargar_audio(url)
             if file_path:
-                # Obtener solo el nombre del archivo
-                nombre_archivo = os.path.basename(file_path)
-                archivo = nombre_archivo
-                mensaje = f"¡Descarga completada! Archivo: {nombre_archivo}"
+                archivo = os.path.basename(file_path)
+                mensaje = f"¡Descarga completada! Archivo: {archivo}"
             else:
                 mensaje = f"Error: {result}"
     
     return render_template('index.html', mensaje=mensaje, archivo=archivo)
 
-@app.route('/descargas/<filename>')
+@app.route('/descargas/<path:filename>')
 def descargar_archivo(filename):
-    return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    else:
+        return "Archivo no encontrado", 404
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
